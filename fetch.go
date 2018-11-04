@@ -1,6 +1,7 @@
 package pureglimpse
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -21,41 +22,56 @@ type Fetcher struct {
 
 func NewFetcher() Fetcher {
 	f := Fetcher{}
-	apps := f.ListApps(1)
-	for _, app := range apps {
-		fmt.Println(app)
-		f.FetchApp(app)
+	for x := range []int16{0, 0, 0, 0} {
+		apps := f.ListApps(x + 1)
+		for _, app := range apps {
+			fmt.Println(app)
+			f.FetchApp(app)
+		}
 	}
 	return f
 }
 
 var re = regexp.MustCompile(`.*<a id="download_link" .+ href="(.+)">click here</a>`)
-var apkRe = regexp.MustCompile(`>(.+)_([v\.0-9]+)_apkpure\.com\.apk`)
+var apkRe = regexp.MustCompile(`>(.+)_v(.+)_apkpure\.com\.apk`)
+var ApkDir = "data/apks/"
 
 func (f *Fetcher) FetchApp(app ApkItem) bool {
-	// Check if file exists
-	apkPath := fmt.Sprintf("data/apks/%s.apk", app.PackageId)
-	_, e := os.Open(apkPath)
+	// Check if manifest exists
+	apkJsonPath := fmt.Sprintf("data/apks/%s/manifest.json", app.PackageId)
+	_, e := os.Open(apkJsonPath)
 	if e == nil {
-		fmt.Printf("found apk at path %s - not downloading", apkPath)
+		fmt.Printf("found apk at path %s - not downloading\n", apkJsonPath)
 		return true
 	}
 
-	// Fetch APK redirect from download page
+	// fetch download page
 	apkUrl := fmt.Sprintf("%s%s/%s", ApkPureUrl, app.Url, ApkPureDl)
 	resp := f.Get(apkUrl)
-	matches := re.FindStringSubmatch(string(resp))
 	// Found URL in page (probably)
+	matches := re.FindStringSubmatch(string(resp))
 	dlUrl := matches[1]
+	// found version in page
 	matches = apkRe.FindStringSubmatch(string(resp))
-	//apkData :=
-	return false
+	if len(matches) < 2 {
+		panic("could not match in resp: " + string(resp))
+	}
+	app.CurrentVersion = matches[2]
+	// prepare path
+	os.Mkdir(ApkDir+app.PackageId, 0755)
+	apkPath := f.ApkPath(app.PackageId, app.CurrentVersion)
 	fmt.Printf("Downloading pkg: %s (title: %s)\n", app.PackageId, app.Title)
 	// Dump the metadata about the APK
 	apkBytes := f.Get(dlUrl)
 	fmt.Printf("Writing pkg %s to %s\n", app.PackageId, apkPath)
 	f.WriteFile(apkPath, apkBytes)
+	appJson, _ := json.Marshal(app)
+	f.WriteFile(apkJsonPath, appJson)
 	return true
+}
+
+func (f *Fetcher) ApkPath(pkgId, version string) string {
+	return fmt.Sprintf("%s%s/%s.apk", ApkDir, pkgId, version)
 }
 
 type ApkItem struct {
