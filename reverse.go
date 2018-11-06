@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/pierrre/archivefile/zip"
 )
 
 var ApktoolUrl = "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.3.4.jar"
@@ -37,7 +39,7 @@ var ReversedRoot = "data/rev/"
 func (r Reverser) ReverseApp(app AppItem) {
 	apkPath := ApkPath(app.PackageId, app.CurrentVersion)
 	outputPath := ReversedRoot + app.PackageId + "/" + app.CurrentVersion
-	f, e := os.Open(outputPath)
+	f, e := os.Open(outputPath + ".zip")
 	if e == nil {
 		fmt.Println("Already reversed "+app.PackageId+" ", f)
 		return
@@ -51,8 +53,22 @@ func (r Reverser) ReverseApp(app AppItem) {
 	if err != nil {
 		panic(err.Error())
 	}
-	time.Sleep(15 * time.Second)
 	fmt.Println(out.String())
+	fmt.Println("Compressing result...")
+	r.ZipPath(outputPath)
+	fmt.Println("Destroying result folder...")
+	e = os.RemoveAll(outputPath)
+	fmt.Printf("Deleted result folder %s (err: %s)\n", outputPath, e)
+	time.Sleep(45 * time.Second)
+}
+
+func (r Reverser) ZipPath(path string) {
+	// Take the output path and turn it into a zip before deleting the original output path
+	zipPath := path + ".zip"
+	e := zip.ArchiveFile(path, zipPath, nil)
+	if e != nil {
+		panic(e.Error())
+	}
 }
 
 func (r Reverser) CheckApkTool() bool {
@@ -61,8 +77,8 @@ func (r Reverser) CheckApkTool() bool {
 		// Found APK tool ok
 		fmt.Println("apktool.jar found, no need to continue")
 		return true
-	} else if e != os.ErrNotExist {
-		panic("Could not open APKtool.jar: " + e.Error())
+	} else {
+		//		panic("Could not open APKtool.jar: " + e.Error())
 	}
 	fmt.Println("Fetching apktool.jar")
 	body := ReadUrl(ApktoolUrl)
