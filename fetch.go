@@ -14,31 +14,20 @@ var ApkPureUrl = "https://apkpure.com"
 var ApkPureArgs = "?ajax=1&page=%d"
 var ApkPureDl = "download?from=details"
 
+var re = regexp.MustCompile(`.*<a id="download_link" .+ href="(.+)">click here</a>`)
+var apkRe = regexp.MustCompile(`>(.+)_v(.+)_apkpure\.com\.x?apk`)
+var ApkDir = "data/apks/"
+
 type Fetcher struct {
 	appFetched chan int
 }
 
 func NewFetcher() Fetcher {
 	f := Fetcher{}
+	os.MkdirAll("data/cache", 0755)
+	os.MkdirAll("data/apks", 0755)
 	return f
 }
-
-func (f *Fetcher) StreamList(listStream chan AppItem, max int) {
-	fetched := 0
-	i := 1
-	for fetched < max {
-		apps := f.ListApps(i)
-		i += 1
-		for _, app := range apps {
-			listStream <- f.FetchApp(app)
-		}
-		fetched += len(apps)
-	}
-}
-
-var re = regexp.MustCompile(`.*<a id="download_link" .+ href="(.+)">click here</a>`)
-var apkRe = regexp.MustCompile(`>(.+)_v(.+)_apkpure\.com\.apk`)
-var ApkDir = "data/apks/"
 
 func ApkPath(pkgId, version string) string {
 	return fmt.Sprintf("%s%s/%s.apk", ApkDir, pkgId, version)
@@ -48,12 +37,32 @@ func ApkManifestPath(pkgId string) string {
 	return fmt.Sprintf("data/apks/%s/manifest.json", pkgId)
 }
 
+func (f *Fetcher) StreamList(listStream chan AppItem, cat string, max int) {
+	fetched := 0
+	i := 1
+	for fetched < max {
+		apps := f.List(cat, i)
+		i += 1
+		for _, app := range apps {
+			listStream <- f.FetchApp(app)
+		}
+		fetched += len(apps)
+	}
+	listStream <- AppItem{}
+}
+
+func (f *Fetcher) List(cat string, page int) []AppItem {
+	url := fmt.Sprintf(ApkPureUrl+"/"+cat+ApkPureArgs, page)
+	body := ReadUrlCached(url)
+	return f.ParseList(string(body))
+}
+
 func (f *Fetcher) FetchApp(app AppItem) AppItem {
 	// Check if manifest exists
 	apkJsonPath := ApkManifestPath(app.PackageId)
 	data := ReadFile(apkJsonPath)
 	if data != nil {
-		fmt.Printf("found apk at path %s - not downloading\n", apkJsonPath)
+		//fmt.Printf("found apk at path %s - not downloading\n", apkJsonPath)
 		var decoded AppItem
 		json.Unmarshal(data, &decoded)
 		return decoded
@@ -64,6 +73,9 @@ func (f *Fetcher) FetchApp(app AppItem) AppItem {
 	resp := ReadUrl(apkUrl)
 	// Found URL in page (probably)
 	matches := re.FindStringSubmatch(string(resp))
+	if len(matches) < 2 {
+		panic(fmt.Sprintf("Could not match for query %s with resp %s", apkUrl, string(resp)))
+	}
 	dlUrl := matches[1]
 	// found version in page
 	matches = apkRe.FindStringSubmatch(string(resp))
@@ -130,10 +142,4 @@ func (f *Fetcher) ParseList(body string) []AppItem {
 		items = append(items, li)
 	}
 	return items
-}
-
-func (f *Fetcher) List(cat string, page int) []AppItem {
-	url := fmt.Sprintf(ApkPureUrl+"/"+cat+ApkPureArgs, page)
-	body := ReadUrlCached(url)
-	return f.ParseList(string(body))
 }

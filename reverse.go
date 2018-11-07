@@ -12,6 +12,7 @@ import (
 
 var ApktoolUrl = "https://bitbucket.org/iBotPeaches/apktool/downloads/apktool_2.3.4.jar"
 var ApktoolPath = fmt.Sprintf("%s/util/apktool.jar", WorkingDir)
+var ReversedRoot = "data/rev/"
 
 // Reverser can reverse APK files (through unzipping or APKtool where Java is available)
 // Should automatically fetch APKtool where possible
@@ -22,6 +23,8 @@ type Reverser struct {
 // give us a path to the original apk, give us a reference for this process
 func NewReverser() Reverser {
 	r := Reverser{make(chan AppItem, 20)}
+	os.MkdirAll(ReversedRoot, 0755)
+	os.MkdirAll(WorkingDir+"/util", 0755)
 	r.CheckApkTool()
 	return r
 }
@@ -29,19 +32,22 @@ func NewReverser() Reverser {
 func (r *Reverser) StreamAppsForever(appReversed chan AppItem) {
 	for {
 		app := <-r.AppStream
+		if app.PackageId == "" {
+			// dead app, shut down
+			appReversed <- app
+			return
+		}
 		r.ReverseApp(app)
 		appReversed <- app
 	}
 }
 
-var ReversedRoot = "data/rev/"
-
 func (r Reverser) ReverseApp(app AppItem) {
 	apkPath := ApkPath(app.PackageId, app.CurrentVersion)
 	outputPath := ReversedRoot + app.PackageId + "/" + app.CurrentVersion
-	f, e := os.Open(outputPath + ".zip")
+	_, e := os.Open(outputPath + ".zip")
 	if e == nil {
-		fmt.Println("Already reversed "+app.PackageId+" ", f)
+		//fmt.Println("Already reversed "+app.PackageId+" ", f)
 		return
 	}
 	fmt.Println("Reverse app requested: ", app)
@@ -51,7 +57,9 @@ func (r Reverser) ReverseApp(app AppItem) {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		panic(err.Error())
+		os.RemoveAll(outputPath)
+		fmt.Printf("Could not decode %s\n", app.PackageId)
+		return
 	}
 	fmt.Println(out.String())
 	fmt.Println("Compressing result...")
@@ -59,7 +67,7 @@ func (r Reverser) ReverseApp(app AppItem) {
 	fmt.Println("Destroying result folder...")
 	e = os.RemoveAll(outputPath)
 	fmt.Printf("Deleted result folder %s (err: %s)\n", outputPath, e)
-	time.Sleep(45 * time.Second)
+	time.Sleep(5 * time.Second)
 }
 
 func (r Reverser) ZipPath(path string) {

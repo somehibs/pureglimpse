@@ -39,6 +39,9 @@ func NewScanner() Scanner {
 func (s *Scanner) ScanAppsForever() {
 	for {
 		app := <-s.ScanChan
+		if app.PackageId == "" {
+			return
+		}
 		s.ScanApp(app)
 	}
 }

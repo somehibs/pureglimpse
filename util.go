@@ -57,7 +57,6 @@ func ReadFile(path string) []byte {
 		if err != nil {
 			return nil
 		}
-		fmt.Printf("read from cache (%s)\n", path)
 		return dat
 	}
 	fmt.Println(err.Error())
